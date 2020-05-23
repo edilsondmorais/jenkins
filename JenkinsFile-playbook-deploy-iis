@@ -1,0 +1,217 @@
+def versionbuild, repoUrl, projectKey, OutputDir, validaSonar, loggerFile, server, artifactFile
+pipeline {
+    agent{
+        label 'slave-windows'   
+    }
+	environment {
+	    solutionFile = "netcore-medium.sln"
+	    projectFile = "src/test-net-core-mvc.csproj"
+		serversDeploy = "testeHmg"
+		application = "gitlabteste"
+		applicationPool = "gitlabteste"
+		repoName = "gitlabteste-dev"
+		publishProfile = "Release"
+		sonarqubeStatus = "disabled"
+		validaSonar = false
+		UnitTestStatus = "disabled"
+		validaBranch = false
+		BuildBranchName = "Dev"
+	}
+	stages {
+	    stage ('Git Checkout') {
+			steps {
+				script {
+				    projectKey = "${application}"
+					
+					if (env.gitlabBranch == "${BuildBranchName}"){
+						echo "Branch teste"
+						checkout([$class: 'GitSCM',
+							branches: [[name: "${env.gitlabBranch}"]],
+							doGenerateSubmoduleConfigurations: false, 
+							extensions: [[$class: 'WipeWorkspace']], 
+							submoduleCfg: [], 
+							userRemoteConfigs: [[credentialsId: "gitlab.local.root", url: "${repoUrl}"]]
+                        ])
+						validaBranch = true
+					}
+					if (validaBranch == false){
+						error "A Branch ${env.gitlabBranch} nao esta configurada para realizar deploy"
+					}
+				}
+			}
+		}
+		stage('Dependencies') {
+			steps {
+				script {
+					def sonarScanner = tool 'dotnet-sonar-scanner-3-0'
+					withSonarQubeEnv('SonarQube') {
+						//Code Check Sonarqube
+						def sonarScannerBin = "${sonarScanner}/SonarScanner.MSBuild.dll"
+						withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'ArtifactoryCredentials', usernameVariable: 'userArtifactory', passwordVariable: 'passArtifactory']]) {
+							powershell "D:\\jenkins\\tools\\nuget\\nuget.exe restore ${solutionFile} -source https://artifactory.local/artifactory/api/nuget/nuget-corp"
+						}
+						
+					}
+				}
+            }
+        }
+		stage('Build') {
+			steps {
+				script {
+					def sonarScanner = tool 'dotnet-sonar-scanner-3-0'
+					withSonarQubeEnv('SonarQube') {
+						//Code Check Sonarqube
+						def sonarScannerBin = "${sonarScanner}/SonarScanner.MSBuild.dll"
+						OutputDir="${projectKey}-artifact"
+
+						bat "dotnet ${sonarScannerBin} begin /k:\"${projectKey}\" /n:\"${projectKey}\" /v:\"${env.BUILD_NUMBER}\" /d:sonar.host.url=\"${SONAR_HOST_URL}\" /d:sonar.sourceEncoding=UTF-8"
+						bat "dotnet build ${solutionFile} --output \"${OutputDir}\" --configuration ${publishProfile} -p:Version=${env.BUILD_NUMBER} "
+						bat "dotnet ${sonarScannerBin} end "
+						
+						zip zipFile: "${projectKey}-${env.BUILD_NUMBER}.zip", archive: false, dir: "${OutputDir}"
+					}
+				}
+            }
+        }
+        stage('Sonarqube - Quality') {
+			when {
+				expression { sonarqubeStatus == 'enabled' }
+			}
+			steps {
+				script {
+                    //Check quality gate Result
+					def qualityGateResult = null
+					timeout(time: 30, unit: 'MINUTES') {
+						qualityGateResult = waitForQualityGate()
+					}
+					
+					if(validaSonar){
+						if(qualityGateResult.status == 'OK') {
+							echo "Sonar quality gateway - Projeto passou no teste de qualidade!"
+						} 
+						else {
+							error "Sonar quality gateway - Projeto nao passou no teste de qualidade do Sonarqube!"
+						}
+					}
+							
+					if(!validaSonar){
+						echo "Sonar quality gateway - Codigo foi analisado pelo Sonarqube."
+					}
+				}
+			}
+        }
+		stage('Unit Test') {
+		    when {
+				expression { UnitTestStatus == 'enabled' }
+			}
+			steps {
+				script {
+				    loggerFile = "${projectKey}-test.trx"
+					bat "dotnet test ${solutionFile} --logger \"trx;LogFileName=${loggerFile}\" "
+				}
+			}
+        }
+		stage('Upload Artifact') {
+			steps {
+				script {
+					try {
+						if (fileExists ("${projectKey}-${env.BUILD_NUMBER}.zip")){
+								// Obtain an Artifactory server instance
+								server = Artifactory.server "artfactoryserver"
+								echo "${server}"
+								def buildInfo = Artifactory.newBuildInfo()
+								// Set custom build name and number.
+								buildInfo.setName "${projectKey}"
+								buildInfo.setNumber "${env.BUILD_NUMBER}"
+								buildInfo.env.capture = true
+								
+								// define the upload spec
+								def uploadSpec = """{
+								"files": [
+									{
+									"pattern": "${projectKey}-${env.BUILD_NUMBER}.zip",
+									"regexp": "true",
+									"target": "${repoName}/",
+									"flat": "false",
+									"recursive": "true"
+									}
+								]
+								}"""
+								
+								// Upload to Artifactory.
+								def buildUpload = server.upload spec: uploadSpec, buildInfo: buildInfo
+								
+								// Publish the build to Artifactory
+								server.publishBuildInfo buildInfo
+						}
+						else{
+							error "Erro ao realizar upload de arquivo."
+						}
+					} catch (Exception e) {
+						echo "Erro ao realizar Upload de Artefatos"
+					}
+				}
+			}
+		}
+		stage('Deploy') {
+			steps {
+				script {
+				projectKey = "${application}"
+
+					withCredentials([usernamePassword(credentialsId: 'windowscredentials', usernameVariable: 'userAnsible', passwordVariable: 'passAnsible')]) {
+					
+						ansibleTower(
+							towerServer: 'ansibleawx',
+							towerCredentialsId: 'ansibleAwxJenkins',
+							templateType: 'job',
+							jobTemplate: 'template-deploy-iis',
+							importTowerLogs: true,
+							inventory: 'WebSiteDeploy',
+							jobTags: '',
+							skipJobTags: '',
+							limit: '',
+							removeColor: false,
+							verbose: true,
+							credential: 'windows_credential',
+							extraVars: """---
+appPool: '${applicationPool}'
+artifactorySecret: '${env.artifactSecret}'
+artifactoryFile: '${projectKey}-${env.BUILD_NUMBER}.zip'
+artifactoryServer: '${env.artifactServer}'
+artifactoryRepo: '${repoName}'
+hostsDeploy: '${serversDeploy}'""",
+							async: false
+						)
+					}
+					
+					serverPromote = Artifactory.server "artfactoryserver"
+					def buildInfo = Artifactory.newBuildInfo()
+					
+					def promotionConfigDev = [
+						// Mandatory parameters
+						'targetRepo'         : repoName,
+						'buildName'          : application,
+						'buildNumber'        : env.BUILD_NUMBER,
+						// Comment and Status to be displayed in the Build History tab in Artifactory
+						'comment'            : 'Deploy da aplicacao em Desenvolvimento',
+						'status'             : 'Dev',
+						// Specifies the source repository for build artifacts.
+						'sourceRepo'         : repoName,
+						// Indicates whether to promote the build dependencies, in addition to the artifacts. False by default
+						'includeDependencies': true,
+						// Indicates whether to fail the promotion process in case of failing to move or copy one of the files. False by default.
+						'failFast'           : true
+					]
+					 
+					// Promote build
+					serverPromote.promote promotionConfigDev
+				}
+			}
+		}
+	}
+	post {
+		always {
+			mstest failOnError: false, keepLongStdio: true, testResultsFile: "**\\${loggerFile}"
+		}
+	}
+}
