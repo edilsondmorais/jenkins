@@ -1,6 +1,12 @@
+/*
+Esta pipeline tem 3 etapas:
+1 - Faz o git clone
+2 - Build do código nodejs usando o npm
+3 - Gera o pacote em diretório onde é usado para armazenar artefatos.
+*/
 pipeline {
     agent{
-        label 'c-ado-isprd55'   
+        label 'c-ado-isprd55'  /* Label do slave do Jenkins em Windows */ 
     }
 	environment {
 	   PATH = "c:\\Windows\\System32;C:\\Program Files\\nodejs;C:\\Program Files\\nodejs\\node_modules\\npm\\bin;C:\\Program Files (x86)\\Yarn\\bin"
