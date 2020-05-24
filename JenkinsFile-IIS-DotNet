@@ -1,3 +1,10 @@
+/*
+Esta pipeline tem 4 etapas para uma app Web:
+1 - Faz o git clone
+2 - Build do código .Net usando o MsBuild
+3 - Gera o pacote em diretório onde é usado para armazenar artefatos.
+4 - Faz o deploy no server onde roda a app
+*/
 pipeline {
     agent{
         label 'c-ado-isprd55'   /* Label do Slave do Jenkins em Windows */
