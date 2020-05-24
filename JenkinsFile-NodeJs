@@ -1,0 +1,65 @@
+pipeline {
+    agent{
+        label 'c-ado-isprd55'   
+    }
+	environment {
+	   PATH = "c:\\Windows\\System32;C:\\Program Files\\nodejs;C:\\Program Files\\nodejs\\node_modules\\npm\\bin;C:\\Program Files (x86)\\Yarn\\bin"
+	   APPDATA = "C:\\Users\\usr_Jekins\\AppData\\Roaming"
+	   build = "true"
+	   gerapacote = "true"
+       DestinoBKP = "" /* Aqui estara mapeado o Publicador, informar o nome do subdiretorio ex: U:\\CobWeb */
+       OrigemBKP = ""  /* Aqui estara mapeado o Servidor Remoto ex: U:\\CobWeb  */
+	   DestinoBuild = "${env.OrigemBKP}" /* Nao precisa alterar */
+	   solutionFile = ""      /* Informar o nome da solution ex: ${env.WORKSPACE}\\CobWeb.sln */
+       OutPutBuild = "${env.WORKSPACE}\\build"
+	   Password = "11deca4b-2715-4058-8c0c-b96e209fe8b2" /*ID do usuario a ser utilizado na execucao dos comandos remoto*/
+	   UserMount = "usr-jenkins" /*ID do usuario a ser utilizado para montar os volumes remotos*/
+       Publicador = ""
+       ServerHMG = ""
+       DirServer = "" /*Diretorio anterior o da aplicacao no server remoto ex: \\c\$\\inetpub\\wwwroot*/
+       
+    }
+	stages {
+        stage('Git Checkout') {
+			steps {
+				script {
+					checkout changelog: false,
+						poll: false,
+						scm: [$class: 'GitSCM', branches: [[name: "*/HMG"]], 
+						doGenerateSubmoduleConfigurations: false, 
+						extensions: [[$class: 'WipeWorkspace']],
+						gitTool: 'Git-Slave-Windows',
+						submoduleCfg: [], 
+						userRemoteConfigs: [[credentialsId: '85b2b627-1050-45ce-9d54-4d85da324aa2', url: "http://root@git.dominio/grupo/projeto.git"]]
+						]
+						
+						
+				}
+			}
+		}
+		stage('Build') {
+			steps {
+				script {
+					if (build == "true"){
+					    bat "echo \"echo \$?\" > check-build"
+					    bat "del build\\* /s /q"
+						bat "npm install -g webpack"
+						bat "npm install"
+						bat "npm run build"
+					}
+				}
+				
+			}
+		}
+	    stage('Gerar pacote') {
+			steps {
+				script {
+					if (gerapacote == "true"){
+						bat "d:\\Jenkins\\scripts\\GeradorPacotes.bat ${OutPutBuild}"
+					}
+				}	
+			}
+		}
+		
+	}
+}
