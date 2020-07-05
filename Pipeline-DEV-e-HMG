@@ -1,0 +1,87 @@
+/*
+A idéia é criar uma pipeline que atende o ambiente de desenvolvimento e de homologação de uma mesma aplicação.
+Esta pipeline tem 4 etapas para uma app Web, e esta preparada para ambientes HMG e DEV:
+1 - Faz o git clone
+2 - Build do código .Net usando o MsBuild
+3 - Gera o pacote em diretório onde é usado para armazenar artefatos.
+4 - Faz o deploy no server onde roda a app
+*/
+pipeline {
+
+    agent any
+	
+	
+	environment {
+       PATH = "${env.PATH};c:\\Windows\\System32"
+	   GIT = "http://192.168.1.10/devops/unico-jenkinsfile.git"
+	   
+	   BRANCH_RUN = "${env.gitlabBranch}"
+	   BRANCH_DSV = "development"
+	   BRANCH_HMG = "release-a"
+	   msbuildtool = "true"
+	   gerapacote = "true"
+	   solutionFile = "${env.WORKSPACE}\\CobWeb.sln"
+	   PUBXML = "D:\\jenkins\\pubxml\\CobWeb.pubxml"
+       DestinoBKP = "" /* Aqui estara mapeado o Publicador, informar o nome do subdiretorio ex: U:\\CobWeb */
+       OrigemBKP = ""  /* Aqui estara mapeado o Servidor Remoto ex: U:\\CobWeb  */
+       OutPutBuild = "${env.WORKSPACE}\\"
+       DestinoBuild = "${env.OrigemBKP}" /* Nao precisa alterar */
+	   Password = "" /*ID do usuario a ser utilizado na execucao dos comandos remoto*/
+	   UserMount = "usr-jenkins" /*ID do usuario a ser utilizado para montar os volumes remotos*/
+       Publicador = "\\\\publicador\\gmuds\\Jenkins\\Backup"
+       ServerHMG = "c-ado-wshmg95"
+       DirServer = "\\c\$\\inetpub\\wwwroot"
+       
+    }
+	stages {
+        stage('Git Checkout') {
+			steps {
+			    script {
+					git branch: "${BRANCH_RUN}", credentialsId: 'root-git', url: "${GIT}"
+	
+				}
+			}
+		}
+		stage('Build') {
+			when { 
+				anyOf {
+					environment name: 'BRANCH_RUN', value: "${BRANCH_DSV}"
+					environment name: 'BRANCH_RUN', value: "${BRANCH_HMG}"
+				}
+			
+			}
+			steps {
+				
+				echo "Executando build .....da branch  ${BRANCH_RUN} "
+				
+			}
+			
+		}	
+		/* so ira gerar pacote se ocorreu evento de merge na branch release-a */
+		stage('Gerar pacote') {
+			when{
+				allOf {
+					environment name: 'BRANCH_RUN', value: "${BRANCH_HMG}"
+				}
+			}
+			steps {
+				
+				echo "Gerando pacote da Branch: ${BRANCH_RUN} "
+					
+			}
+		}
+		stage('Deploy em HMG') {
+			when{
+				allOf {
+					environment name: 'BRANCH_RUN', value: "${BRANCH_HMG}"
+				}
+			}
+			steps {
+				
+				echo "Deploy nos servidores HMG "
+					
+			}
+		}
+		
+	}
+}
