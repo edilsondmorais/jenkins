@@ -1,0 +1,133 @@
+ServerFront = ['c-ado-wsprd14','c-ado-wsprd15','c-ado-wsprd16','c-ado-wsprd17']
+ServerBack = ['c-ado-asprd11','c-ado-asprd12','c-ado-asprd13','c-ado-asprd14']
+pipeline {
+    agent { label 'master' }
+    environment {
+        PATH = "/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+		GIT = "git.dominio.com.br/canais-digitais/SAN.site.git"
+		BRANCH = "*/master"
+		URLSITE = "https://www.dominio.com.br/"
+		SERVER = "c-ado-wsprd14"
+		SERVER2 = "c-ado-asprd11"
+    }
+	
+    stages {
+        stage('Checkout GIT')
+        {
+            steps{
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: "${BRANCH}"]],
+                    userRemoteConfigs: [[credentialsId: '85b2b627-1050-45ce-9d54-4d85da324aa2', url: "http://root@${GIT}"]]])
+            }
+        }
+		stage('Backup FRONT & BACK'){
+            steps {
+               script {
+					
+					sshPublisher(
+						continueOnError: true, failOnError: false,
+						publishers: [
+							sshPublisherDesc(
+								configName: "${SERVER}",
+								transfers: [
+									sshTransfer(
+										execCommand: '''
+												data=`/bin/date +%Y-%d-%h-%H-%M`
+												find /app/backups/site-adobe*.tar.gz -mtime +3 -exec rm -Rf {} \\;
+												tar cvzf /app/backups/site-$data.tar.gz /app/site-adobe
+										'''
+										
+									)
+								]),
+								
+								sshPublisherDesc(
+								configName: "${SERVER2}",
+								transfers: [
+									sshTransfer(
+										execCommand: '''
+												data=`/bin/date +%Y-%d-%h-%H-%M`
+												find /app/backups/site-adobeback*.tar.gz -mtime +3 -exec rm -Rf {} \\;
+												tar cvzf /app/backups/site-back-$data.tar.gz --exclude=/app/site-back/logs  /app/site-back
+										'''
+										
+									)
+								])
+					])
+				   
+               }
+           }
+       }
+        
+        stage('Deploy Front'){
+            steps {
+               script {
+					for(String SERVERF: ServerFront){
+						sshPublisher(
+							continueOnError: true, failOnError: false,
+							publishers: [
+								sshPublisherDesc(
+									configName: "${SERVERF}",
+									transfers: [
+										sshTransfer(
+											execCommand: '''
+													
+											''',
+											removePrefix: 'front',
+											sourceFiles: "front/**",
+											remoteDirectory: "site-adobe/"
+										)
+									])
+									
+									
+						])
+				   }
+               }
+           }
+       }
+	   stage('Deploy BackEnd'){
+            steps {
+               script {
+					for(String SERVERB: ServerBack){
+						sshPublisher(
+							continueOnError: true, failOnError: false,
+							publishers: [
+								sshPublisherDesc(
+								configName: "${SERVERB}",
+								transfers: [
+									sshTransfer(
+										execCommand: '''
+												
+										''',
+										removePrefix: 'back',
+										sourceFiles: "back/**",
+										remoteDirectory: "site-back/"
+									)
+								])
+						])
+				   }
+               }
+           }
+       }
+       stage('TEST 200 OK'){
+			steps {
+				httpRequest url: "${URLSITE}",
+					validResponseCodes: '200'
+				
+			}
+	   }
+   }
+   
+   
+   post {
+        always {
+			emailext from: 'publicador@dominio.com.br',
+			    to: "${env.gitlabUserEmail}",
+				subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+				body: "${env.JOB_NAME} [${env.BUILD_NUMBER}] has result ${currentBuild.result}"
+		}
+		cleanup{
+			deleteDir()
+		}
+    }
+}
