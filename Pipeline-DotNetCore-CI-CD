@@ -1,0 +1,182 @@
+pipeline {
+    agent{
+        label 'c-ado-isprd55'   
+    }
+	environment {
+       PATH = "D:\\Mono\\lib\\mono\\nuget\\v3.4.4;C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Professional\\MSBuild\\15.0\\Bin\\;C:\\Program Files\\dotnet;C:\\Windows\\System32"
+	   nugetPath = "D:\\Mono\\lib\\mono\\nuget\\v3.4.4\\"
+	   APPDATA = "C:\\Users\\usr_Jekins\\AppData\\Roaming"
+	   MSBuildSDKsPath = "C:\\Program Files\\dotnet\\sdk\\3.1.302\\Sdks"
+	   EnableNuGetPackageRestore = "true"
+	   
+	   //COREHOST_TRACE="1" //Habilitar debug
+       DOTNET_CLI_HOME= "C:\\temp\\DOTNET_CLI_HOME"
+       USERPROFILE = "C:\\Users\\usr_Jekins" /* Necessario para build com dotnet */
+       ProgramFiles = "C:\\Program Files"   /* Necessario para build com dotnet */
+       
+	   GIT = "git.dominio.com.br/FAM/PSEL/INTPSFAM-ModuloIntegradorDoProcessoSeletivoFAM/intps.controleps.git"
+	   BRANCH = "*/HMG"
+	   build = "true"
+	   gerapacote = "true"
+	   
+	   solutionFile = "${env.WORKSPACE}\\intps.controleps.sln"
+	   projectFile = "${env.WORKSPACE}\\API\\API.csproj"
+	   Pbxml = ""
+	   App = "intps.fam.controleps"
+       DestinoBKP = "J:\\FAM\\${env.App}"     /* Volume mapeado para bkp, Se for GMUD utilize a letra G:\, altere tb no step onde monta  */
+       OrigemBKP = "I:\\*"
+	   
+       OutPutBuild = "${env.WORKSPACE}\\Api\\bin\\Release\\netcoreapp3.1\\"	/* Diretorio da saida do build, configurado no .pbxml */
+	   
+	   UserLocalWin = "admin-local-windows" /*ID do usuario a ser utilizado na execucao dos comandos remoto*/
+	   UserMount = "usr-jenkins"          /*ID do usuario a ser utilizado para montar os volumes remotos*/
+       UserBuild = "usr-jenkins"
+       Publicador = "\\\\publicador\\gmuds\\Jenkins\\Backup"
+       ServerHMG = "f-ado-ashmg12.dominio.com.br"
+	   ServerHMG2 = "f-ado-ashmg13.dominio.com.br"
+       DirServer = "D\$\\api-intps\\controleps"
+	   ServerRemoto = "\\\\${ServerHMG}\\${DirServer}"
+	   ServerRemoto2 = "\\\\${ServerHMG2}\\${DirServer}"
+	   Deploy = "I:\\" 
+       
+    }
+	stages {
+		stage('Git Checkout') {
+			steps {
+				script {
+					checkout changelog: false,
+						poll: false,
+						scm: [$class: 'GitSCM', branches: [[name: "${BRANCH}"]], 
+						doGenerateSubmoduleConfigurations: false, 
+						extensions: [[$class: 'WipeWorkspace']], 
+						gitTool: 'Git-Slave-Windows', 
+						submoduleCfg: [], 
+						userRemoteConfigs: [[credentialsId: '85b2b627-1050-45ce-9d54-4d85da324aa2', url: "http://root@${GIT}"]]
+						]
+						
+						
+				}
+			}
+		}
+		
+		stage ('Build HMG') {
+			steps {
+			    script {
+					bat "dotnet build ${projectFile} /p:DeployOnBuild=true -c Release /p:PublishProfile=FolderProfile"
+					
+				}
+			}
+		}
+		stage('Gerar pacote') {
+			steps {
+				script {
+					if (gerapacote == "true"){
+						bat "del ${OutPutBuild}\\appsettings.json /s /q"
+						bat "d:\\Jenkins\\scripts\\GeradorPacotes.bat ${OutPutBuild}"
+					}
+				}	
+			}
+		}
+		stage ('Deploy em HMG') {
+			steps {
+			    script {
+					withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: "${env.UserLocalWin}", usernameVariable: 'Password_USR', passwordVariable: 'Password_PSW']]) {
+					/* MONTANDO OS VOLUME DO SERVER REMOTO */
+					def stdout0 = bat(returnStdout: true, script: '''
+						@echo OFF
+						
+						NET USE I: /DELETE /YES
+						net use I: %ServerRemoto% /user:%Password_USR% %Password_PSW%
+						
+						
+					''')
+					println stdout0
+					
+					}
+					withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: "${env.UserMount}", usernameVariable: 'Password_USR', passwordVariable: 'Password_PSW']]) {
+					/* MONTANDO OS VOLUMES PARA USO NO BACKUP */
+					def stdout = bat(returnStdout: true, script: '''
+						@echo OFF
+						IF NOT EXIST J: (
+							net use J: %Publicador% /user:%Password_USR% %Password_PSW%
+						)
+						
+					''')
+					println stdout
+					
+					/* FAZENDO DE BACKUP */
+					/* Get-ChildItem -Path \\\\$env:ServerHMG\\$env:DirServer -Exclude Logs,Crefisa.Framework.Dados.dll,Oracle.ManagedDataAccess.dll | Compress-Archive -DestinationPath ("$env:DestinoBKP\\HMG\\$data\\ServiceTask.zip")*/
+					
+					def stdout1 = powershell(label: 'Fazendo Backup', returnStdout: true, script: '''
+						
+						$data=Get-Date -Uformat '%Y%m%d-%H%M'
+						New-Item -Path $env:DestinoBKP\\HMG\\$data -ItemType "directory"
+						Compress-Archive $env:OrigemBKP -DestinationPath ("$env:DestinoBKP\\HMG\\$data\\$env:App.zip")
+                        if($?) {
+                            Write-Output 'Backup do Ambiente HMG salvo no caminho abaixo:'
+                            Write-Output $env:Publicador\\$env:App\\HMG\\$data
+                        } else {
+                            Write-Error 'Ocorreu algum erro ao tentar fazer o backup !'
+							
+							$LastExitCode = 1
+							exit $LastExitCode
+                        }
+						
+					''')
+					println stdout1
+					
+					def stdout3 = powershell(label: 'Fazendo Deploy', returnStdout: true, script: '''
+						Copy-Item -Path $env:OutPutBuild\\* -Destination $env:Deploy\\ -Recurse -Force
+                        if($?) {
+                            Write-Output "Deploy do Ambiente $env:ServerHMG realizado com sucesso!"
+                        } else {
+                            Write-Error 'Ocorreu algum erro ao tentar fazer o Deploy !'
+							$LastExitCode = 1
+							exit $LastExitCode
+                        }
+					''')
+					println stdout3
+					
+					}
+					
+					withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: "${env.UserLocalWin}", usernameVariable: 'Password_USR', passwordVariable: 'Password_PSW']]) {
+					
+					def stdout4 = bat(returnStdout: true, script: '''
+						@echo OFF
+						IF EXIST K: (
+							NET USE K: /DELETE /YES
+							net use K: %ServerRemoto2% /user:%Password_USR% %Password_PSW%
+						)
+						
+					''')
+					println stdout4
+					
+					def stdout5 = powershell(label: 'Fazendo Deploy Server2', returnStdout: true, script: '''
+						Copy-Item -Path $env:OutPutBuild\\* -Destination $env:Deploy\\ -Recurse -Force
+                        if($?) {
+                            Write-Output "Deploy do Ambiente $env:ServerHMG2 realizado com sucesso!"
+                        } else {
+                            Write-Error 'Ocorreu algum erro ao tentar fazer o Deploy !'
+							$LastExitCode = 1
+							exit $LastExitCode
+                        }
+					''')
+					println stdout5
+				
+					}
+			    }
+			}
+		}
+	}
+	post {
+        always {
+			emailext from: 'publicador@dominio.com.br',
+			    to: "${env.gitlabUserEmail}",
+				subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+				body: "${env.JOB_NAME} [${env.BUILD_NUMBER}] has result ${currentBuild.result}"
+		}
+		cleanup{
+			deleteDir()
+		}
+    }
+}
