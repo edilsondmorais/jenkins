@@ -1,33 +1,34 @@
-/*
-Esta pipeline tem 4 etapas para um app como serviço Windows :
-1 - Faz o git clone
-2 - Build do código .Net usando o MsBuild
-3 - Gera o pacote em diretório onde é usado para armazenar artefatos.
-4 - Faz o deploy no server onde roda a app
-*/
 pipeline {
     agent{
-        label 'c-ado-isprd55'   /* Label do Slave do Jenkins em Windows */
+        label 'c-ado-isprd55'   
     }
+	
 	environment {
-       PATH = "${env.PATH};c:\\Windows\\System32"
+       DOTNET_CLI_HOME = "C:\\temp\\DOTNET_CLI_HOME\\"
+       PATH = "${env.PATH};C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Professional\\MSBuild\\15.0\\Bin\\;c:\\Windows\\System32;${env.WORKSPACE}\\Crefisa.NFC\\"
+       MSBuildSDKsPath = "C:\\Program Files\\dotnet\\sdk\\2.2.110\\Sdks"
+	   GIT = "git.dominio.com.br/Cobranca/COB.Cobranca/Robos/Site.IntegracaoCobProjuris.git"
 	   msbuildtool = "true"
 	   gerapacote = "true"
-	   app = "VCServicos" /* Nome da Aplicacao */
-	   solutionFile = "${env.WORKSPACE}\\Camada.sln"
-       DestinoBKP = "U:\\Camada" /* Aqui estara mapeado o Publicador, informar o nome do subdiretorio ex: U:\\VCServicos */
-       OrigemBKP = "W:\\Camada"  /* Aqui estara mapeado o Servidor Remoto ex: U:\\VCServicos  */
-       OutPutBuild = "${env.WORKSPACE}\\Publish"
-       DestinoBuild = "${env.OrigemBKP}" /* Nao precisa alterar */
+	   
+	   solutionFile = "${env.WORKSPACE}\\Site.IntegracaoCobProjuris.sln"
+	   projectFile = "${env.WORKSPACE}\\RoboIDP\\RoboIDP.csproj"
+	   Pbxml = ""
+	   App = "IntegracaoCobProjuris"
+       DestinoBKP = "J:\\${env.App}"     /* Volume mapeado para bkp, Se for GMUD utilize a letra G:\, altere tb no step onde monta  */
+       
+       OutPutBuild = "${env.WORKSPACE}\\RoboIDP\\bin\\Release"			/* Diretorio da saida do build, configurado no .pbxml */
+	   
 	   Password = "" /*ID do usuario a ser utilizado na execucao dos comandos remoto*/
-	   UserMount = "usr-jenkins" /*ID do usuario a ser utilizado para montar os volumes remotos*/
+	   UserMount = "usr-jenkins"          /*ID do usuario a ser utilizado para montar os volumes remotos*/
        Publicador = "\\\\publicador\\gmuds\\Jenkins\\Backup"
        ServerHMG = "c-ado-sbhmg08"
-       DirServer = "\\D\$\\servicos"
+       DirServer = "D\$\\robos\\Crefisa.IntegracaoCobProjuris"
+	   
        
     }
 	stages {
-        stage('Git Checkout') {
+		stage('Git Checkout') {
 			steps {
 				script {
 					checkout changelog: false,
@@ -37,7 +38,7 @@ pipeline {
 						extensions: [[$class: 'WipeWorkspace']], 
 						gitTool: 'Git-Slave-Windows', 
 						submoduleCfg: [], 
-						userRemoteConfigs: [[credentialsId: '85b2b627-1050-45ce-9d54-4d85da324aa2', url: "http://root@git.dominio.com.br/grupo/projeto.git"]]
+						userRemoteConfigs: [[credentialsId: '85b2b627-1050-45ce-9d54-4d85da324aa2', url: "http://root@${GIT}"]]
 						]
 						
 						
@@ -48,8 +49,10 @@ pipeline {
 			steps {
 				script {
 					if (msbuildtool == "true"){
-						dir("C:\\Program Files (x86)\\MSBuild\\14.0\\Bin\\"){
-							bat "msbuild.exe ${solutionFile} /p:RestoreSources=\"https://artifactory.local/artifactory/api/nuget/nuget-corp\" /t:Clean;Rebuild;Publish /p:Configuration=Release /p:DeployOnBuild=true /p:Outdir=Publish"
+						dir("C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Professional\\MSBuild\\15.0\\Bin\\"){
+							bat "msbuild.exe ${solutionFile} -p:Configuration=Release -p:DeployOnBuild=true"
+							bat "msbuild.exe ${projectFile} -p:Configuration=Release -p:DeployOnBuild=true "
+							bat "del ${OutPutBuild}\\*.config"
 						}
 					}
 				}
@@ -59,57 +62,57 @@ pipeline {
 			steps {
 				script {
 					if (gerapacote == "true"){
-						bat "del ${OutPutBuild}\\*.config"
 						bat "d:\\Jenkins\\scripts\\GeradorPacotes.bat ${OutPutBuild}"
+						bat "del ${OutPutBuild}\\pacotes.txt"
 					}
 				}	
 			}
 		}
-		stage ('Trabalhando no Ambiente de HMG') {
+		
+		stage ('Deploy no Ambiente de HMG') {
 			steps {
 			    script {
 					withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: "${env.UserMount}", usernameVariable: 'Password_USR', passwordVariable: 'Password_PSW']]) {
 					/* MONTANDO OS VOLUMES PARA USO NO STEP */
 					def stdout = bat(returnStdout: true, script: '''
 						@echo OFF
-						NET USE U: /DELETE /YES
-                        NET USE W: /DELETE /YES
-                        net use W: \\\\%ServerHMG%%DirServer% /user:%Password_USR% %Password_PSW%
-						echo "Diretorio Origem Montado na unidade W:"
-						net use U: %Publicador% /user:%Password_USR% %Password_PSW%
-						echo "Diretorio destino do Backup Montado na unidade U:"
+						IF NOT EXIST J: (
+							net use J: %Publicador% /user:%Password_USR% %Password_PSW%
+						)
 					''')
 					println stdout
+					
 					/* FAZENDO DE BACKUP */
+					/* Get-ChildItem -Path \\\\$env:ServerHMG\\$env:DirServer -Exclude Logs,Crefisa.Framework.Dados.dll,Oracle.ManagedDataAccess.dll | Compress-Archive -DestinationPath ("$env:DestinoBKP\\HMG\\$data\\ServiceTask.zip")*/
+					def stdout1 = bat(label: 'Parando o IIS', returnStdout: true, script: '''
+						iisreset %ServerHMG% /stop
+						echo "IIS Parado"
+					''')
+					println stdout1
 					def stdout2 = powershell(label: 'Fazendo Backup', returnStdout: true, script: '''
+						
 						$data=Get-Date -Uformat '%Y%m%d-%H%M'
 						New-Item -Path $env:DestinoBKP\\HMG\\$data -ItemType "directory"
-						Compress-Archive $env:OrigemBKP -DestinationPath ("$env:DestinoBKP\\HMG\\$data\\Camada.zip")
+						Compress-Archive \\\\$env:ServerHMG\\$env:DirServer -DestinationPath ("$env:DestinoBKP\\HMG\\$data\\$env:App.zip")
                         if($?) {
                             Write-Output 'Backup do Ambiente HMG salvo no caminho abaixo:'
-                            Write-Output $env:Publicador\\Camada\\HMG\\$data
+                            Write-Output $env:Publicador\\$env:App\\HMG\\$data
                         } else {
                             Write-Error 'Ocorreu algum erro ao tentar fazer o backup !'
+							Invoke-command -computername "$env:ServerHMG" -scriptblock {iisreset /START}
 							$LastExitCode = 1
 							exit $LastExitCode
                         }
+						
 					''')
 					println stdout2
+					
 					/* FAZENDO DEPLOY */
-					def stdout3 = bat(label: 'Parando o Servico', returnStdout: true, script: ''' 
-						@echo OFF
-						sc \\\\%ServerHMG% stop "WCF Crefisa Camada Cob - Integracao Online"
-                        IF %ERRORLEVEL% EQU 0 (echo "Servico Parado %ServerHMG%") else (COLOR 00)
-
-					''')
-					println stdout3
-					/* winRMClient credentialsId: "${env.Password}",
-					hostName: "${ServerHMG}",
-					winRMOperations: [invokeCommand ("iisreset /stop")] */
+					
                     def stdout4 = powershell(label: 'Fazendo Deploy', returnStdout: true, script: '''
-						Copy-Item -Path $env:OutPutBuild\\* -Destination $env:DestinoBuild -Recurse -Force
+						Copy-Item -Path $env:OutPutBuild\\* -Destination \\\\$env:ServerHMG\\$env:DirServer -Recurse -Force
                         if($?) {
-                            Write-Output 'Deploy do Ambiente HMG realizado com sucesso!'
+                            Write-Output 'Deploy do Ambiente ServerHMG1 realizado com sucesso!'
                         } else {
                             Write-Error 'Ocorreu algum erro ao tentar fazer o Deploy !'
 							$LastExitCode = 1
@@ -117,25 +120,27 @@ pipeline {
                         }
 					''')
 					println stdout4
-					def stdout5 = bat(label: 'Iniciando o Servico', returnStdout: true, script: '''
-						@echo OFF
-						sc \\\\%ServerHMG% start "WCF Crefisa Camada Cob - Integracao Online"
-                        IF %ERRORLEVEL% EQU 0 (echo "Servico Iniciado %ServerHMG%") else (COLOR 00)
+					def stdout5 = bat(label: 'Parando o IIS', returnStdout: true, script: '''
+						iisreset %ServerHMG% /start
+						echo "IIS Parado"
 					''')
 					println stdout5
-					/* winRMClient credentialsId: "${env.Password}",
-					hostName: "${ServerHMG}", 
-					winRMOperations: [invokeCommand ("iisreset /start")] */
-					/* REMOVE OS VOLUMES MAPEADOS */
-					def stdout6 = bat(returnStdout: true, script: '''
-						@echo OFF
-						NET USE U: /DELETE /YES
-                        NET USE W: /DELETE /YES
-					''')
-					println stdout6
+				
 					}
 				}  
 			}
 		}
 	}
+	/* Este step ira enviar e-mail para o usuario q acionou o job via merger e para o Andre*/
+	post {
+        always {
+			emailext from: 'publicador@dominio.com.br',
+			    to: "${env.gitlabUserEmail},andre.goncalves@dominio.com.br",
+				subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+				body: "${env.JOB_NAME} [${env.BUILD_NUMBER}] has result ${currentBuild.result}"
+		}
+		cleanup{
+			deleteDir()
+		}
+    }
 }
