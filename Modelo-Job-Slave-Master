@@ -1,0 +1,47 @@
+pipeline {
+
+	agent { label 'master' }
+		environment {
+			JAVA_HOME = "/usr/lib/jvm/jre-1.8.0-openjdk"
+			PATH = "/opt/maven/bin:/usr/sbin:/usr/bin:/sbin:/bin:$JAVA_HOME/bin:$PATH"
+			CLASSPATH = "$JAVA_HOME/lib/dt.jar:$JAVA_HOME/lib/tools.jar"
+			MAVEN_HOME = "/opt/maven/"
+			GIT = "git.com.br/Adquirencia/APS/crefisa-aps-core.git"
+			BRANCH = "*/HMG-3952"
+			
+	}
+	stages {
+		stage('Checkout GIT'){
+			steps{
+				checkout([
+					$class: 'GitSCM',
+					branches: [[name: "${BRANCH}"]],
+					userRemoteConfigs: [[credentialsId: '85b2b627-1050-45ce-9d54-4d85da324aa2', url: "http://root@${GIT}"]]])
+			}
+		}
+		
+		stage ('Build in server Linux') {
+			steps {
+				script {
+					sh "mvn clean install -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Dmaven.wagon.http.ssl.ignore.validity.dates=true -DskipTests"
+				
+				}
+			}
+		}
+		
+		stage('Build in server Windows'){
+            agent { 
+              label 'c-ado-isprd55' 
+            }
+            environment {
+                PATH = "${env.PATH};c:\\Windows\\System32;C:\\maven\\bin"
+                JAVA_HOME= "C:\\Program Files (x86)\\Java\\jdk1.8.0_181"
+            }
+            steps{
+                script{
+				    bat "mvn clean install -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Dmaven.wagon.http.ssl.ignore.validity.dates=true -DskipTests"
+                } 
+            }
+        }
+	}
+}
