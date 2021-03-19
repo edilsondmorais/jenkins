@@ -1,0 +1,253 @@
+pipeline {
+    agent{
+        label 'c-ado-isprd55'   
+    }
+    parameters {
+		string(defaultValue: "", description: 'FAVOR DIGITAR O NUMERO DA RDM', name: 'NumeroRDM')
+		string(defaultValue: "", description: 'FAVOR DIGITAR O NUMERO DA TAREFA', name: 'NumeroTSK')
+	}
+	
+	environment {
+       PATH = "${env.PATH};c:\\Windows\\System32;C:\\maven\\bin"
+       JAVA_HOME= "C:\\Program Files (x86)\\Java\\jdk1.8.0_181"
+	   GIT = "git.com.br/Datacenter/Servidores.git"
+	   BRANCH_RUN = "${env.gitlabBranch}"
+	   BRANCH_PRD = "master" /* Brach utilizado para ambiente PRD */
+	   BRANCH_HMG = "HMG" /* Brach utilizado para ambiente HMG */
+	   BRANCH_DSV = "DSV" /* Brach utilizado para ambiente DSV */
+	   msbuildtool = "true"
+	   gerapacote = "true"
+	   
+	   solutionFile = "${env.WORKSPACE}"
+	   projectFile = "${env.WORKSPACE}"
+	   Pbxml = ""
+	   App = "saldo-batch"
+       Jar = "SaldoBatch.jar"
+       DestinoBKP = "J:\\Adquirencia\\${env.App}"     /* Volume mapeado para bkp, Se for GMUD utilize a letra G:\, altere tb no step onde monta  */
+       DestinoBKPGMUD = "P:\\"
+       OrigemBKP = "S:\\"
+       
+       OutPutBuild = "${env.WORKSPACE}\\Pacote"			/* Diretorio da saida do build, configurado no .pbxml */
+	   
+	   Password = "" /*ID do usuario a ser utilizado na execucao dos comandos remoto*/
+	   UserMount = "usr-jenkins"          /*ID do usuario a ser utilizado para montar os volumes remotos*/
+       Publicador = "\\\\publicador\\gmuds\\Jenkins\\Backup\\"
+       PublicadorGMUD = "\\\\publicador\\Gmuds\\RDM"
+       ServerHMG = "c-ado-svhmg50"
+	   ServerHMG2 = ""
+	   ServerPRD = "c-ado-svprd111"
+	   ServerPRD2 = ""
+       DirServer = "D\$\\APS\\app\\-saldo-batch"
+	   
+       
+    }
+	stages {
+		stage('Git Checkout') {
+			when {
+				anyOf {
+					environment name: "BRANCH_RUN", value: "${BRANCH_HMG}"
+					environment name: "BRANCH_RUN", value: "${BRANCH_DSV}"
+					environment name: "BRANCH_RUN", value: 'null'
+				}
+			}
+			steps {
+				script {
+				
+					if (BRANCH_RUN == 'null'){
+						if (NumeroRDM == ''){
+							def stdout1 = powershell(label: 'JOB SEM NUMERO DE GMUD E TAREFA', returnStdout: true, script: '''
+							Write-Error 'PARA EXECUTAR EM PRD PRECISA INFORMAR A GMUD E TAREFA!'
+							$LastExitCode = 1
+							exit $LastExitCode
+						''')
+						println stdout1
+						}
+						
+						checkout changelog: false,
+							poll: false,
+							scm: [$class: 'GitSCM', branches: [[name: ".*/${BRANCH_PRD}"]], 
+							doGenerateSubmoduleConfigurations: false, 
+							extensions: [[$class: 'WipeWorkspace']], 
+							gitTool: 'Git-Slave-Windows', 
+							submoduleCfg: [], 
+							userRemoteConfigs: [[credentialsId: '85b2b627-1050-45ce-9d54-4d85da324aa2', url: "http://root@${GIT}"]]
+						]
+						
+						
+					}
+					else
+					{
+						checkout changelog: false,
+							poll: false,
+							scm: [$class: 'GitSCM', branches: [[name: "${BRANCH_RUN}"]], 
+							doGenerateSubmoduleConfigurations: false, 
+							extensions: [[$class: 'WipeWorkspace']], 
+							gitTool: 'Git-Slave-Windows', 
+							submoduleCfg: [], 
+							userRemoteConfigs: [[credentialsId: '85b2b627-1050-45ce-9d54-4d85da324aa2', url: "http://root@${GIT}"]]
+							]
+						
+					}
+				}
+			}
+			
+		}
+		stage('BUILD HMG/DSV') {
+			when {
+				anyOf {
+					environment name: "BRANCH_RUN", value: "${BRANCH_HMG}"
+					environment name: "BRANCH_RUN", value: "${BRANCH_DSV}"
+				
+				}
+			}
+	
+			steps {
+				script {
+					if (BRANCH_RUN == "${BRANCH_DSV}"){
+						def stdout1 = bat(label: 'BUILD DSV', returnStdout: true, script: '''
+							
+							ECHO "BUILD EM DSV"
+						''')
+						println stdout1
+							
+							
+					}
+					if (BRANCH_RUN == "${BRANCH_HMG}"){
+						def stdout2 = bat(label: 'BUILD HMG', returnStdout: true, script: '''
+							
+							ECHO "BUILD EM HMG"
+						''')
+						println stdout2
+								
+					}
+					def stdout3 = bat(label: 'MONTANDO PACOTE', returnStdout: true, script: '''
+							ECHO "GERANDO PACOTE"
+						
+						''')
+						println stdout3
+				}
+			}
+		}
+		stage('DEPLOY DSV') {
+	
+			when {
+				environment name: "BRANCH_RUN", value: "${BRANCH_DSV}"
+			}
+			steps {
+				script {
+					
+					bat "ECHO DEPLOY EM DSV"
+					
+				}
+			}
+		}
+		stage('DEPLOY HMG') {
+	
+			when {
+			
+				environment name: "BRANCH_RUN", value: "${BRANCH_HMG}"
+			
+			}
+			steps {
+				script {
+					
+					bat "ECHO DEPLOY HMG"
+						
+						
+				}
+			}
+	
+		}
+		
+		stage('BUILD PRD') {
+			when {
+			
+				environment name: "BRANCH_RUN", value: 'null'
+			
+			}
+			steps {
+				script {
+					def stdout2 = bat(label: 'BUILD PRD', returnStdout: true, script: '''
+							
+							ECHO "BUILD EM PRD"
+						''')
+						println stdout2
+								
+					def stdout3 = bat(label: 'MONTANDO PACOTE', returnStdout: true, script: '''
+							ECHO "GERANDO PACOTE"
+						
+						''')
+						println stdout3
+					
+				}
+			}
+		}
+		stage('DEPLOY PRD') {
+			
+			when {
+			
+				environment name: "BRANCH_RUN", value: 'null'
+			
+			}    
+			steps {
+				script {
+				
+					withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: "${env.UserMount}", usernameVariable: 'Password_USR', passwordVariable: 'Password_PSW']]) {
+					/* MONTANDO OS VOLUMES PARA USO NO STEP */
+					def stdout = bat(returnStdout: true, script: '''
+						@echo OFF
+						IF NOT EXIST P: (
+							net use P: %PublicadorGMUD% /user:%Password_USR% %Password_PSW%
+						)
+					''')
+					println stdout
+					
+					/* FAZENDO DE BACKUP */
+					
+					def stdout2 = powershell(label: 'Fazendo Backup', returnStdout: true, script: '''
+						$ano=Get-Date -Uformat '%Y'
+						New-Item -Path $env:DestinoBKPGMUD\\$ano\\$env:NumeroRDM\\$env:NumeroTSK -ItemType "directory"
+						
+						Compress-Archive \\\\$env:ServerPRD\\$env:DirServer -DestinationPath ("$env:DestinoBKPGMUD\\$ano\\$env:NumeroRDM\\$env:NumeroTSK\\$env:App.zip")
+                        if($?) {
+                            Write-Output 'Backup do Ambiente PRD salvo no caminho abaixo:'
+                            Write-Output $env:PublicadorGMUD\\$ano\\$env:NumeroRDM\\$env:NumeroTSK\\
+                        } else {
+                            Write-Error 'Ocorreu algum erro ao tentar fazer o backup !'
+							$LastExitCode = 1
+							exit $LastExitCode
+                        }
+						
+					''')
+					println stdout2
+					
+					/* FAZENDO DEPLOY */
+					
+                    def stdout4 = powershell(label: 'Fazendo Deploy', returnStdout: true, script: '''
+						Write-Output "Deploy do Ambiente $env:ServerPRD realizado com sucesso!"
+					''')
+					println stdout4
+					
+					def stdout5 = powershell(label: 'Fazendo Deploy', returnStdout: true, script: '''
+						Write-Output "Deploy do Ambiente $env:ServerPRD2 realizado com sucesso!"
+					''')
+					println stdout5
+					
+					
+				
+					}
+					
+				}
+			}
+		}
+	}
+	post {
+        always {
+			emailext from: 'publicador@domino.com.br',
+			    to: "${env.gitlabUserEmail}",
+				subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+				body: "${env.JOB_NAME} [${env.BUILD_NUMBER}] has result ${currentBuild.result}"
+		}
+		
+    }
+}
