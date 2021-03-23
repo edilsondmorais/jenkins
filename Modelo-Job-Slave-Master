@@ -6,12 +6,12 @@ pipeline {
 			PATH = "/opt/maven/bin:/usr/sbin:/usr/bin:/sbin:/bin:$JAVA_HOME/bin:$PATH"
 			CLASSPATH = "$JAVA_HOME/lib/dt.jar:$JAVA_HOME/lib/tools.jar"
 			MAVEN_HOME = "/opt/maven/"
-			GIT = "git.com.br/Adquirencia/APS/crefisa-aps-core.git"
+			GIT = "git.com.br/Adquirencia/APS/crefisa-aps-web-rest.git"
 			BRANCH = "*/HMG-3952"
 			
 	}
 	stages {
-		stage('Checkout GIT'){
+		stage('Checkout GIT Master'){
 			steps{
 				checkout([
 					$class: 'GitSCM',
@@ -28,11 +28,31 @@ pipeline {
 				}
 			}
 		}
+		stage('Checkout GIT Slave'){
+            agent { label 'c-ado-isprd55' }
+            environment {
+                PATH = "${env.PATH};c:\\Windows\\System32;C:\\maven\\bin"
+                JAVA_HOME= "C:\\Program Files (x86)\\Java\\jdk1.8.0_181"
+				GIT = "git.com.br/Adquirencia/APS/crefisa-aps-web-rest.git"
+				BRANCH = "*/HMG-3952"
+            }
+            steps{
+                script {
+					checkout changelog: false,
+						poll: false,
+						scm: [$class: 'GitSCM', branches: [[name: "${BRANCH}"]], 
+						doGenerateSubmoduleConfigurations: false, 
+						extensions: [[$class: 'WipeWorkspace']], 
+						gitTool: 'Git-Slave-Windows', 
+						submoduleCfg: [], 
+						userRemoteConfigs: [[credentialsId: '85b2b627-1050-45ce-9d54-4d85da324aa2', url: "http://root@${GIT}"]]
+						]
+			    }
+            }
+        }
 		
 		stage('Build in server Windows'){
-            agent { 
-              label 'c-ado-isprd55' 
-            }
+            agent { label 'c-ado-isprd55' }
             environment {
                 PATH = "${env.PATH};c:\\Windows\\System32;C:\\maven\\bin"
                 JAVA_HOME= "C:\\Program Files (x86)\\Java\\jdk1.8.0_181"
@@ -44,4 +64,13 @@ pipeline {
             }
         }
 	}
+	post {
+        always {
+			emailext from: 'publicador@dominio.com.br',
+			    to: "${env.gitlabUserEmail},luis.santiago@dominio.com.br,wellington.souza@dominio.com.br",
+				subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+				body: "${env.JOB_NAME} [${env.BUILD_NUMBER}] has result ${currentBuild.result}"
+		}
+		
+    }
 }
