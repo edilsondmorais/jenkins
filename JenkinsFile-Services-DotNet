@@ -1,20 +1,20 @@
 pipeline {
     agent{
-        label 'c-ado-isprd55'   
+        label 'Servidor'   
     }
 	
 	environment {
        DOTNET_CLI_HOME = "C:\\temp\\DOTNET_CLI_HOME\\"
        PATH = "${env.PATH};C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\Professional\\MSBuild\\15.0\\Bin\\;c:\\Windows\\System32;${env.WORKSPACE}\\Crefisa.NFC\\"
        MSBuildSDKsPath = "C:\\Program Files\\dotnet\\sdk\\2.2.110\\Sdks"
-	   GIT = "git.dominio.com.br/Cobranca/COB.Cobranca/Robos/Site.IntegracaoCobProjuris.git"
+	   GIT = "git.dominio.com.br/Cobranca/COB.Cobranca/Robos/Site.Integracao.git"
 	   msbuildtool = "true"
 	   gerapacote = "true"
 	   
-	   solutionFile = "${env.WORKSPACE}\\Site.IntegracaoCobProjuris.sln"
+	   solutionFile = "${env.WORKSPACE}\\Site.Integracao.sln"
 	   projectFile = "${env.WORKSPACE}\\RoboIDP\\RoboIDP.csproj"
 	   Pbxml = ""
-	   App = "IntegracaoCobProjuris"
+	   App = "Integracao"
        DestinoBKP = "J:\\${env.App}"     /* Volume mapeado para bkp, Se for GMUD utilize a letra G:\, altere tb no step onde monta  */
        
        OutPutBuild = "${env.WORKSPACE}\\RoboIDP\\bin\\Release"			/* Diretorio da saida do build, configurado no .pbxml */
@@ -22,8 +22,8 @@ pipeline {
 	   Password = "" /*ID do usuario a ser utilizado na execucao dos comandos remoto*/
 	   UserMount = "usr-jenkins"          /*ID do usuario a ser utilizado para montar os volumes remotos*/
        Publicador = "\\\\publicador\\gmuds\\Jenkins\\Backup"
-       ServerHMG = "c-ado-sbhmg08"
-       DirServer = "D\$\\robos\\Crefisa.IntegracaoCobProjuris"
+       ServerHMG = "Servidor"
+       DirServer = "D\$\\robos\\Crefisa.Integracao"
 	   
        
     }
@@ -83,7 +83,7 @@ pipeline {
 					println stdout
 					
 					/* FAZENDO DE BACKUP */
-					/* Get-ChildItem -Path \\\\$env:ServerHMG\\$env:DirServer -Exclude Logs,Crefisa.Framework.Dados.dll,Oracle.ManagedDataAccess.dll | Compress-Archive -DestinationPath ("$env:DestinoBKP\\HMG\\$data\\ServiceTask.zip")*/
+					/* Get-ChildItem -Path \\\\$env:ServerHMG\\$env:DirServer -Exclude Logs,arquivo.Framework.Dados.dll,Oracle.ManagedDataAccess.dll | Compress-Archive -DestinationPath ("$env:DestinoBKP\\HMG\\$data\\ServiceTask.zip")*/
 					def stdout1 = bat(label: 'Parando o IIS', returnStdout: true, script: '''
 						iisreset %ServerHMG% /stop
 						echo "IIS Parado"
@@ -135,7 +135,7 @@ pipeline {
 	post {
         always {
 			emailext from: 'publicador@dominio.com.br',
-			    to: "${env.gitlabUserEmail},andre.goncalves@dominio.com.br",
+			    to: "${env.gitlabUserEmail},goncalves@dominio.com.br",
 				subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
 				body: "${env.JOB_NAME} [${env.BUILD_NUMBER}] has result ${currentBuild.result}"
 		}
