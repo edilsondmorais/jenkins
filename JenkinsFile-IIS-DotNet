@@ -7,21 +7,21 @@ Esta pipeline tem 4 etapas para uma app Web:
 */
 pipeline {
     agent{
-        label 'c-ado-isprd55'   /* Label do Slave do Jenkins em Windows */
+        label 'servidor'   /* Label do Slave do Jenkins em Windows */
     }
 	environment {
        PATH = "${env.PATH};c:\\Windows\\System32"
 	   msbuildtool = "true"
 	   gerapacote = "true"
-	   solutionFile = "${env.WORKSPACE}\\CobWeb.sln"
-       DestinoBKP = "U:\\CobWeb" /* Aqui estara mapeado o Publicador, informar o nome do subdiretorio ex: U:\\CobWeb */
-       OrigemBKP = "W:\\CobWeb"  /* Aqui estara mapeado o Servidor Remoto ex: U:\\CobWeb  */
+	   solutionFile = "${env.WORKSPACE}\\App.sln"
+       DestinoBKP = "U:\\Diretorio" /* Aqui estara mapeado o Publicador, informar o nome do subdiretorio ex: U:\\App */
+       OrigemBKP = "W:\\Diretorio"  /* Aqui estara mapeado o Servidor Remoto ex: U:\\App  */
        OutPutBuild = "${env.WORKSPACE}\\Publish_PublishedWebsites\\WebSite"
        DestinoBuild = "${env.OrigemBKP}" /* Nao precisa alterar */
 	   Password = "" /*ID do usuario a ser utilizado na execucao dos comandos remoto*/
 	   UserMount = "usr-jenkins" /*ID do usuario a ser utilizado para montar os volumes remotos*/
        Publicador = "\\\\publicador\\gmuds\\Jenkins\\Backup"
-       ServerHMG = "c-ado-wshmg95"
+       ServerHMG = "servidor"
        DirServer = "\\c\$\\inetpub\\wwwroot"
        
     }
@@ -84,10 +84,10 @@ pipeline {
 						$data=Get-Date -Uformat '%Y%m%d-%H%M'
 						New-Item -Path $env:DestinoBKP\\HMG\\$data -ItemType "directory"
 						
-						Compress-Archive $env:OrigemBKP -DestinationPath ("$env:DestinoBKP\\HMG\\$data\\CobWeb.zip")
+						Compress-Archive $env:OrigemBKP -DestinationPath ("$env:DestinoBKP\\HMG\\$data\\App.zip")
                         if($?) {
                             Write-Output 'Backup do Ambiente HMG salvo no caminho abaixo:'
-                            Write-Output $env:Publicador\\Cobweb\\HMG\\$data
+                            Write-Output $env:Publicador\\App\\HMG\\$data
                         } else {
                             Write-Error 'Ocorreu algum erro ao tentar fazer o backup !'
 							$LastExitCode = 1
