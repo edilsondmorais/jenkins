@@ -6,17 +6,17 @@ Esta pipeline tem 3 etapas:
 */
 pipeline {
     agent{
-        label 'c-ado-isprd55'  /* Label do slave do Jenkins em Windows */ 
+        label 'Servidor'  /* Label do slave do Jenkins em Windows */ 
     }
 	environment {
 	   PATH = "c:\\Windows\\System32;C:\\Program Files\\nodejs;C:\\Program Files\\nodejs\\node_modules\\npm\\bin;C:\\Program Files (x86)\\Yarn\\bin"
 	   APPDATA = "C:\\Users\\usr_Jekins\\AppData\\Roaming"
 	   build = "true"
 	   gerapacote = "true"
-       DestinoBKP = "" /* Aqui estara mapeado o Publicador, informar o nome do subdiretorio ex: U:\\CobWeb */
-       OrigemBKP = ""  /* Aqui estara mapeado o Servidor Remoto ex: U:\\CobWeb  */
+       DestinoBKP = "" /* Aqui estara mapeado o Publicador, informar o nome do subdiretorio ex: U:\\App */
+       OrigemBKP = ""  /* Aqui estara mapeado o Servidor Remoto ex: U:\\App  */
 	   DestinoBuild = "${env.OrigemBKP}" /* Nao precisa alterar */
-	   solutionFile = ""      /* Informar o nome da solution ex: ${env.WORKSPACE}\\CobWeb.sln */
+	   solutionFile = ""      /* Informar o nome da solution ex: ${env.WORKSPACE}\\App.sln */
        OutPutBuild = "${env.WORKSPACE}\\build"
 	   Password = "11deca4b-2715-4058-8c0c-b96e209fe8b2" /*ID do usuario a ser utilizado na execucao dos comandos remoto*/
 	   UserMount = "usr-jenkins" /*ID do usuario a ser utilizado para montar os volumes remotos*/
