@@ -1,0 +1,30 @@
+# jenkins-casc.yaml
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - usernamePassword:
+              id: "bitbucket-credentials"
+              password: ${BITBUCKET_CLOUD_PASSWORD}
+              scope: GLOBAL
+              username: ${BITBUCKET_CLOUD_USERNAME}
+              usernameSecret: true
+          - usernamePassword:
+              id: "nexus-credentials"
+              password: ${NEXUS_PASSWORD}
+              scope: GLOBAL
+              username: ${NEXUS_USERNAME}
+              usernameSecret: true
+
+jenkins:
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: ${JENKINS_USERNAME}
+          password: ${JENKINS_PASSWORD}
+  authorizationStrategy: loggedInUsersCanDoAnything
+jobs:
+  - file: /usr/local/seedjob.groovy
+  - file: /usr/local/seedMultibranchJob.groovy
