@@ -33,7 +33,7 @@ pipeline{
         NEXUS_CREDENTIALS = credentials('nexus-credentials')
     }
     stages {
-        stage('Deploy in HML') {
+        stage('Prepare') {
             steps {
                 script {
                     
