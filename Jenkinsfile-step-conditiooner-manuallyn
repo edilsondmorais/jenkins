@@ -1,0 +1,17 @@
+
+pipeline {
+  agent any
+
+  stages {
+
+    stage('Build 2') {
+        when {
+            allOf { triggeredBy 'UserIdCause'}
+        }
+        steps {
+          echo 'Building Manually'
+
+        }
+    }
+  }
+}
