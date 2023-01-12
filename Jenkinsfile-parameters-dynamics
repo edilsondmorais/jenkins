@@ -1,0 +1,77 @@
+
+// NEXUS_URL = com url do nexus, configurado no environments globla do Jenkins
+// nexus-credentials = credentials com user e senha do nexus
+import groovy.json.JsonSlurper
+
+nexusItems = [:]
+
+def listVersionsNexus(environment, repoName) {
+    def response = sh(script:"curl -u ${env.NEXUS_CREDENTIALS} -X 'GET' 'http://${env.NEXUS_URL}/service/rest/v1/search?q=${environment}&repository=${repoName}' -H 'accept: application/json' -H 'NX-ANTI-CSRF-TOKEN: 0.5838090561427705' -H 'X-Nexus-UI: true'", returnStdout: true)
+    //def response = sh(script:"curl -u ${NEXUS_CREDENTIALS} -X 'GET' 'http://${env.NEXUS_URL}/service/rest/v1/search?q=PRD&repository=nsw-front-example-nexus' -H 'accept: application/json' -H 'NX-ANTI-CSRF-TOKEN: 0.5838090561427705' -H 'X-Nexus-UI: true'", returnStdout: true)
+    def count = new JsonSlurper().parseText(response).items.assets.size()
+    for (ii = 0; ii < count; ii++){
+        def content_type = new JsonSlurper().parseText(response).items.assets[ii].contentType[0]
+        if (content_type == 'application/x-gzip') {
+            def downloadUrl = new JsonSlurper().parseText(response).items.assets[ii].downloadUrl[0]
+            def nexusVersion = sh(script: "echo $downloadUrl | awk -F'/' '{print \$8}'", returnStdout: true)
+
+            nexusItems.put(nexusVersion, downloadUrl)
+        }
+    }
+
+    return nexusItems
+}
+
+
+pipeline{
+    agent any
+    environment {
+        TAG=""
+        NEXUS_CREDENTIALS = credentials('nexus-credentials')
+    }
+    stages {
+        stage('Select beta version') {
+            when {
+                allOf { expression { selectEnvironment == "HML" }; triggeredBy 'UserIdCause' }
+            }
+            steps {
+                script {
+                    versions = listVersionsNexus("DEV", repoName)
+                    versionsKey = versions.keySet() as List
+                    selectedVersion = input(
+                        id: 'userInput', message: 'input parameters',
+                        parameters: [[
+                            $class: 'ChoiceParameterDefinition',
+                            name: 'versoes',
+                            choices: versionsKey,
+                            description: 'Versões disponíveis',
+                        ],]
+                    )
+                    fileUrl = versions.find{ it.key == selectedVersion }?.value
+                }
+            }
+        }
+
+        stage('Deploy in HML') {
+            when {
+                allOf { expression { selectEnvironment == "HML" }; triggeredBy 'UserIdCause' }
+            }
+            steps {
+                    timeout(time: 30, unit: "MINUTES") {
+                        input message: 'Confirma seguir com a implantação da versão ' + selectedVersion + ' em HML?', submitter: 'alice, bob'
+                    }
+                    script {
+                        echo "Iniciar implantação em HML"
+                        echo "Versão a ser implantada ${selectedVersion}"
+
+                        sh "curl -X GET ${fileUrl} -u ${env.NEXUS_CREDENTIALS} -s -o /dev/null"
+                        file = sh(script: "echo $fileUrl | awk -F'/' '{print \$9}'", returnStdout: true).trim()
+
+                        echo "FILE:: ${file}"
+
+                        echo "Deploy em ambiente de HML"
+                    }
+            }
+        }
+    }
+}
